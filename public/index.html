@@ -1,0 +1,246 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8" />
+  <title>PinMe Export</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- si tu déploies sous /trip-report/ remplace par /trip-report/ -->
+  <base href="/" />
+  <style>
+    :root { --muted:#666; --bg:#fff; --border:#ddd; --shadow:0 8px 24px rgba(0,0,0,.12); }
+    body { font-family: system-ui, Arial, sans-serif; padding: 20px; }
+    h3 { margin: 0 0 12px; }
+    label { display:block; margin: 12px 0 6px; font-weight:600; }
+    .row { display:flex; gap:16px; flex-wrap:wrap; }
+    input[type="date"], input[type="time"], button { padding:8px; min-width: 180px; }
+    pre { background:#f7f7f7; padding:12px; white-space:pre-wrap; }
+    .muted { color:var(--muted); font-size:12px; }
+
+    .ms { position: relative; min-width:260px; }
+    .ms-btn {
+      width:100%; padding:10px 12px; border:1px solid var(--border); background:var(--bg);
+      border-radius:8px; display:flex; justify-content:space-between; align-items:center; cursor:pointer;
+    }
+    .ms-btn .label { color:#111; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .ms-btn .caret { font-size:12px; color:#999; }
+    .ms-panel {
+      position:absolute; z-index:50; top:calc(100% + 6px); left:0; width:320px; max-height:360px;
+      background:var(--bg); border:1px solid var(--border); border-radius:12px; box-shadow:var(--shadow);
+      display:none; flex-direction:column;
+    }
+    .ms.open .ms-panel { display:flex; }
+    .ms-head { padding:10px; border-bottom:1px solid var(--border); display:flex; gap:8px; align-items:center; }
+    .ms-search { flex:1; padding:8px; border:1px solid var(--border); border-radius:8px; }
+    .ms-act { padding:8px 10px 0; display:flex; justify-content:space-between; gap:8px; }
+    .ms-list { overflow:auto; padding:4px 10px; flex:1; }
+    .ms-item { display:flex; align-items:center; gap:8px; padding:8px 4px; border-bottom:1px dashed #f0f0f0; }
+    .ms-foot { padding:10px; border-top:1px solid var(--border); display:flex; gap:8px; justify-content:flex-end; }
+    .chip-area { margin-top:6px; display:flex; flex-wrap:wrap; gap:6px; }
+    .chip { display:inline-flex; gap:6px; align-items:center; background:#f6f7fb; border:1px solid #e7e8ef; border-radius:999px; padding:2px 8px; font-size:12px; }
+    .chip b { font-weight:600; }
+    .btn { padding:8px 10px; border:1px solid var(--border); border-radius:8px; background:#fafafa; cursor:pointer; }
+    .btn.primary { background:#0f62fe; color:white; border-color:#0f62fe; }
+  </style>
+</head>
+<body>
+  <h3>Période</h3>
+  <div class="row">
+    <div>
+      <label for="from">Date début</label>
+      <input id="from" type="date" />
+    </div>
+    <div>
+      <label for="to">Date fin</label>
+      <input id="to" type="date" />
+    </div>
+    <div>
+      <label for="fromTime">Heure début</label>
+      <input id="fromTime" type="time" value="00:00" />
+    </div>
+    <div>
+      <label for="toTime">Heure fin</label>
+      <input id="toTime" type="time" value="23:59" />
+    </div>
+  </div>
+
+  <div class="row" style="margin-top:8px">
+    <div>
+      <label>Groupe</label>
+      <div id="msGroups" class="ms">
+        <button type="button" class="ms-btn">
+          <span class="label">Tous les groupes</span><span class="caret">▾</span>
+        </button>
+        <div class="ms-panel">
+          <div class="ms-head"><input type="text" class="ms-search" placeholder="Rechercher..." /></div>
+          <div class="ms-act">
+            <button class="btn" data-action="select-all">Tout sélectionner</button>
+            <button class="btn" data-action="clear">Effacer</button>
+          </div>
+          <div class="ms-list"></div>
+          <div class="ms-foot"><button class="btn primary" data-action="ok">OK</button></div>
+        </div>
+      </div>
+      <div id="chipsGroups" class="chip-area"></div>
+      <div class="muted">* optionnel (affichage uniquement)</div>
+    </div>
+
+    <div>
+      <label>Véhicule</label>
+      <div id="msVehicles" class="ms">
+        <button type="button" class="ms-btn">
+          <span class="label">Tous les véhicules</span><span class="caret">▾</span>
+        </button>
+        <div class="ms-panel">
+          <div class="ms-head"><input type="text" class="ms-search" placeholder="Rechercher..." /></div>
+          <div class="ms-act">
+            <button class="btn" data-action="select-all">Tout sélectionner</button>
+            <button class="btn" data-action="clear">Effacer</button>
+          </div>
+          <div class="ms-list"></div>
+          <div class="ms-foot"><button class="btn primary" data-action="ok">OK</button></div>
+        </div>
+      </div>
+      <div id="chipsVehicles" class="chip-area"></div>
+      <div class="muted">* optionnel (l’export parcourt tous les devices)</div>
+    </div>
+  </div>
+
+  <div style="margin-top:16px">
+    <button id="btnExport">Exporter Excel</button>
+    <span id="status" class="muted" style="margin-left:8px;"></span>
+  </div>
+
+  <pre id="out" style="margin-top:16px"></pre>
+
+  <script>
+    // Support sous-chemin via <base> (ex: /trip-report/)
+    const BASE = document.querySelector('base')?.href || '/';
+    const u = (p) => new URL(p, BASE).toString();
+
+    async function apiGet(path) {
+      const res = await fetch(u('api' + path));
+      if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
+      return res.json();
+    }
+
+    class MultiSelect {
+      constructor(root, { placeholder="Sélectionner...", getId, getLabel, onChange }) {
+        this.root = root;
+        this.btn = root.querySelector(".ms-btn");
+        this.panel = root.querySelector(".ms-panel");
+        this.search = root.querySelector(".ms-search");
+        this.list = root.querySelector(".ms-list");
+        this.placeholder = placeholder;
+        this.getId = getId; this.getLabel = getLabel;
+        this.onChange = onChange || (()=>{});
+        this.items = []; this.filtered = []; this.selected = new Set();
+        this.btn.addEventListener("click", () => this.toggle());
+        this.search.addEventListener("input", () => this.renderList());
+        this.panel.querySelector('[data-action="select-all"]').addEventListener("click", () => {
+          this.filtered.forEach(it => this.selected.add(this.getId(it))); this.renderList();
+        });
+        this.panel.querySelector('[data-action="clear"]').addEventListener("click", () => { this.selected.clear(); this.renderList(); });
+        this.panel.querySelector('[data-action="ok"]').addEventListener("click", () => { this.close(); this.onChange(this.value()); this.updateButtonLabel(); });
+        document.addEventListener("click", (e) => { if (!this.root.contains(e.target)) this.close(); });
+      }
+      setItems(items){ this.items = Array.isArray(items) ? items : []; this.filtered = this.items.slice(); this.renderList(); this.updateButtonLabel(); }
+      value(){ return Array.from(this.selected.values()); }
+      setValue(ids=[]){ this.selected = new Set(ids.map(String)); this.updateButtonLabel(); this.renderList(); }
+      toggle(){ this.root.classList.toggle("open"); }
+      close(){ this.root.classList.remove("open"); }
+      updateButtonLabel(){ const n=this.selected.size; this.root.querySelector(".ms-btn .label").textContent = n===0?this.placeholder:`${n} sélectionné${n>1?"s":""}`; }
+      renderList(){
+        const q=(this.search.value||"").toLowerCase().trim();
+        this.filtered = this.items.filter(it => this.getLabel(it).toLowerCase().includes(q));
+        this.list.innerHTML="";
+        this.filtered.forEach(it=>{
+          const id=String(this.getId(it)); const label=this.getLabel(it);
+          const row=document.createElement("label"); row.className="ms-item";
+          row.innerHTML=`<input type="checkbox" ${this.selected.has(id)?"checked":""}/><span>${label}</span>`;
+          const cb=row.querySelector("input");
+          cb.addEventListener("change", ()=>{ if (cb.checked) this.selected.add(id); else this.selected.delete(id); });
+          this.list.appendChild(row);
+        });
+      }
+    }
+
+    const chipsGroups = document.getElementById("chipsGroups");
+    const chipsVehicles = document.getElementById("chipsVehicles");
+
+    function renderChips(area, ids, toLabel) {
+      area.innerHTML = ""; if (!ids || !ids.length) return;
+      ids.forEach(id => { const chip=document.createElement("span"); chip.className="chip"; chip.innerHTML=`<b>${toLabel(id)}</b>`; area.appendChild(chip); });
+    }
+
+    let groups=[], devices=[];
+    const msGroups = new MultiSelect(document.getElementById("msGroups"), {
+      placeholder: "Tous les groupes",
+      getId: g => String(g.id),
+      getLabel: g => g.name ?? `Group ${g.id}`,
+      onChange: ids => renderChips(chipsGroups, ids, id => {
+        const g = groups.find(x => String(x.id) === String(id));
+        return g ? (g.name ?? `Group ${g.id}`) : id;
+      })
+    });
+
+    const msVehicles = new MultiSelect(document.getElementById("msVehicles"), {
+      placeholder: "Tous les véhicules",
+      getId: d => String(d.id),
+      getLabel: d => d.name || d.attributes?.license_plate || d.uniqueId || `Device ${d.id}`,
+      onChange: ids => renderChips(chipsVehicles, ids, id => {
+        const d = devices.find(x => String(x.id) === String(id));
+        return d ? (d.name || d.attributes?.license_plate || d.uniqueId || `Device ${d.id}`) : id;
+      })
+    });
+
+    async function loadGroups(){ groups = await apiGet("/groups?all=true"); msGroups.setItems(groups); }
+    async function loadDevices(){ devices = await apiGet("/devices?all=true"); msVehicles.setItems(devices); }
+
+    async function exportExcel() {
+      const out = document.getElementById("out");
+      const status = document.getElementById("status");
+      out.textContent = ""; status.textContent = "Génération du fichier...";
+
+      const fromDate = document.getElementById("from").value;
+      const toDate   = document.getElementById("to").value;
+      const fromTime = document.getElementById("fromTime").value || "00:00";
+      const toTime   = document.getElementById("toTime").value   || "23:59";
+
+      if (!fromDate && !toDate) { status.textContent=""; out.textContent="Choisis au moins une date."; return; }
+      const fd = fromDate || toDate, td = toDate || fromDate;
+      if (new Date(fd) > new Date(td)) { status.textContent=""; out.textContent="La date de début doit être ≤ la date de fin."; return; }
+
+      const params = new URLSearchParams({
+        fromDate: fd, toDate: td, fromTime, toTime,
+        groupIds: msGroups.value().join(","), deviceIds: msVehicles.value().join(",")
+      }).toString();
+
+      try {
+        const res = await fetch(u(`export/vehicles-xlsx?${params}`));
+        if (!res.ok) { const text = await res.text(); status.textContent=""; out.textContent=`Erreur export: ${res.status} ${res.statusText}\n${text}`; return; }
+        const blob = await res.blob();
+        const a = document.createElement("a");
+        const objectUrl = URL.createObjectURL(blob);
+        a.href = objectUrl; a.download = "Trip report.xlsx";
+        document.body.appendChild(a); a.click(); a.remove();
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+        status.textContent = "✅ Fichier téléchargé.";
+      } catch (e) { status.textContent = ""; out.textContent = "Erreur réseau: " + e.message; }
+    }
+
+    document.getElementById("btnExport").addEventListener("click", exportExcel);
+
+    (async () => {
+      try {
+        await Promise.all([loadGroups(), loadDevices()]);
+        const today = new Date().toISOString().slice(0,10);
+        document.getElementById("from").value = today;
+        document.getElementById("to").value   = today;
+      } catch (e) {
+        console.error(e);
+        alert("Erreur de chargement (auth/CORS). Regarde la console.");
+      }
+    })();
+  </script>
+</body>
+</html>
