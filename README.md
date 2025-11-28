@@ -21,7 +21,7 @@ A vehicle trip reporting application built with Cloudflare Pages Functions.
 ## API Endpoints
 
 - `ANY /api/*` - Proxies requests to PinMe API
-- `GET /export/vehicles-xlsx` - Generates Excel report
+- `GET /treports/vehicles-xlsx` - Generates Excel report
   - Query params: `fromDate`, `toDate`, `fromTime`, `toTime`, or `date` (YYYY-MM-DD)
 
 ## Local Development
