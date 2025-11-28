@@ -1,0 +1,16 @@
+# Dependencies
+node_modules/
+
+# Environment variables
+.env
+.dev.vars
+
+# OS files
+.DS_Store
+
+# IDE
+.idea/
+
+# Cloudflare
+.wrangler/
+wrangler.toml.bak

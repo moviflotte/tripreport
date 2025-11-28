@@ -5,7 +5,7 @@
   <title>PinMe Export</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <!-- si tu déploies sous /trip-report/ remplace par /trip-report/ -->
-  <base href="/" />
+  <base href="/treports/" />
   <style>
     :root { --muted:#666; --bg:#fff; --border:#ddd; --shadow:0 8px 24px rgba(0,0,0,.12); }
     body { font-family: system-ui, Arial, sans-serif; padding: 20px; }
@@ -118,7 +118,7 @@
     const u = (p) => new URL(p, BASE).toString();
 
     async function apiGet(path) {
-      const res = await fetch(u('api' + path));
+      const res = await fetch('/api' + path);
       if (!res.ok) throw new Error(`${res.status} ${res.statusText}`);
       return res.json();
     }
@@ -216,7 +216,7 @@
       }).toString();
 
       try {
-        const res = await fetch(u(`export/vehicles-xlsx?${params}`));
+        const res = await fetch(u(`vehicles-xlsx?${params}`));
         if (!res.ok) { const text = await res.text(); status.textContent=""; out.textContent=`Erreur export: ${res.status} ${res.statusText}\n${text}`; return; }
         const blob = await res.blob();
         const a = document.createElement("a");
