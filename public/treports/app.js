@@ -1,32 +1,4 @@
-const vehicleReadings = [
-  {
-    date: "2026-06-03",
-    vehicles: [
-      { vehicle: "Audi A3 - 12-AB-34", odometer: 18420, fuelLevel: 72 },
-      { vehicle: "Audi Q5 - 56-CD-78", odometer: 43910, fuelLevel: 46 },
-      { vehicle: "Audi e-tron - 90-EF-12", odometer: 12875, fuelLevel: 88 },
-      { vehicle: "Audi A6 Avant - 34-GH-56", odometer: 61204, fuelLevel: 31 },
-    ],
-  },
-  {
-    date: "2026-06-02",
-    vehicles: [
-      { vehicle: "Audi A3 - 12-AB-34", odometer: 18375, fuelLevel: 78 },
-      { vehicle: "Audi Q5 - 56-CD-78", odometer: 43820, fuelLevel: 52 },
-      { vehicle: "Audi e-tron - 90-EF-12", odometer: 12840, fuelLevel: 94 },
-      { vehicle: "Audi A6 Avant - 34-GH-56", odometer: 61150, fuelLevel: 36 },
-    ],
-  },
-  {
-    date: "2026-06-01",
-    vehicles: [
-      { vehicle: "Audi A3 - 12-AB-34", odometer: 18302, fuelLevel: 84 },
-      { vehicle: "Audi Q5 - 56-CD-78", odometer: 43744, fuelLevel: 59 },
-      { vehicle: "Audi e-tron - 90-EF-12", odometer: 12792, fuelLevel: 63 },
-      { vehicle: "Audi A6 Avant - 34-GH-56", odometer: 61072, fuelLevel: 44 },
-    ],
-  },
-];
+const API_BASE = "/api";
 
 const dateInput = document.querySelector("#reportDate");
 const reportRows = document.querySelector("#reportRows");
@@ -42,8 +14,10 @@ const dateFormatter = new Intl.DateTimeFormat("fr-FR", {
   day: "2-digit",
 });
 
-function findReadingsForDate(date) {
-  return vehicleReadings.find((reading) => reading.date === date);
+function todayISODate() {
+  const today = new Date();
+  const offsetMs = today.getTimezoneOffset() * 60 * 1000;
+  return new Date(today.getTime() - offsetMs).toISOString().slice(0, 10);
 }
 
 function formatDate(date) {
@@ -51,32 +25,141 @@ function formatDate(date) {
   return dateFormatter.format(parsedDate);
 }
 
-function renderReport() {
+async function fetchJson(path) {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  });
+
+  if (!response.ok) {
+    throw new Error(`API ${response.status} ${response.statusText}`);
+  }
+
+  return response.json();
+}
+
+function findNumericValue(source, keys) {
+  for (const key of keys) {
+    const value = source?.[key];
+    const number = Number(value);
+
+    if (Number.isFinite(number)) return number;
+  }
+
+  return null;
+}
+
+function normalizeKilometers(value) {
+  if (value == null) return null;
+
+  return value > 100000 ? value / 1000 : value;
+}
+
+function normalizeFuelLevel(value) {
+  if (value == null) return null;
+
+  const percent = value > 0 && value <= 1 ? value * 100 : value;
+  return Math.max(0, Math.min(100, percent));
+}
+
+function mapVehicleRows(devices, positions) {
+  const positionByDeviceId = new Map(
+    positions.map((position) => [position.deviceId, position])
+  );
+
+  return devices
+    .map((device) => {
+      const position = positionByDeviceId.get(device.id);
+      const positionAttributes = position?.attributes ?? {};
+      const deviceAttributes = device.attributes ?? {};
+      const odometer = findNumericValue(positionAttributes, [
+        "odometer",
+        "totalDistance",
+        "distance",
+      ]) ?? findNumericValue(deviceAttributes, ["odometer", "totalDistance", "distance"]);
+      const fuelLevel = findNumericValue(positionAttributes, [
+        "fuelLevel",
+        "fuel",
+        "fuelPercent",
+      ]) ?? findNumericValue(deviceAttributes, ["fuelLevel", "fuel", "fuelPercent"]);
+
+      return {
+        vehicle: device.name || device.uniqueId || `Véhicule ${device.id}`,
+        odometer: normalizeKilometers(odometer),
+        fuelLevel: normalizeFuelLevel(fuelLevel),
+      };
+    })
+    .sort((a, b) => a.vehicle.localeCompare(b.vehicle, "fr"));
+}
+
+function setLoadingState() {
   const selectedDate = dateInput.value;
-  const report = findReadingsForDate(selectedDate);
-  const rows = report?.vehicles ?? [];
+
+  tableTitle.textContent = `Relevés du ${formatDate(selectedDate)}`;
+  reportSummary.textContent = "Chargement des véhicules depuis l'API...";
+  reportRows.innerHTML = "";
+  emptyState.hidden = true;
+}
+
+function renderRows(rows) {
+  const selectedDate = dateInput.value;
 
   tableTitle.textContent = `Relevés du ${formatDate(selectedDate)}`;
   reportSummary.textContent = `${rows.length} véhicules audités le ${formatDate(selectedDate)}.`;
   reportRows.innerHTML = "";
+  emptyState.textContent = "Aucun véhicule n'a été retourné par l'API.";
   emptyState.hidden = rows.length > 0;
 
   rows.forEach((item) => {
     const row = document.createElement("tr");
-    row.innerHTML = `
-      <td>${item.vehicle}</td>
-      <td>${numberFormatter.format(item.odometer)} km</td>
-      <td>${item.fuelLevel}%</td>
-    `;
+    const vehicleCell = document.createElement("td");
+    const odometerCell = document.createElement("td");
+    const fuelCell = document.createElement("td");
+
+    vehicleCell.textContent = item.vehicle;
+    odometerCell.textContent =
+      item.odometer == null ? "—" : `${numberFormatter.format(Math.round(item.odometer))} km`;
+    fuelCell.textContent =
+      item.fuelLevel == null ? "—" : `${numberFormatter.format(Math.round(item.fuelLevel))}%`;
+
+    row.append(vehicleCell, odometerCell, fuelCell);
     reportRows.append(row);
   });
 }
 
-dateInput.min = vehicleReadings.at(-1).date;
-dateInput.max = vehicleReadings[0].date;
-dateInput.value = vehicleReadings[0].date;
+function renderError(error) {
+  console.error("[treports] failed to load vehicles", error);
 
-dateInput.addEventListener("change", renderReport);
+  tableTitle.textContent = "Relevés indisponibles";
+  reportSummary.textContent = "Impossible de charger les véhicules depuis l'API.";
+  reportRows.innerHTML = "";
+  emptyState.textContent = "Vérifiez votre session et réessayez.";
+  emptyState.hidden = false;
+}
+
+async function loadReport() {
+  setLoadingState();
+
+  try {
+    const [devices, positions] = await Promise.all([
+      fetchJson("/devices"),
+      fetchJson("/positions"),
+    ]);
+
+    renderRows(mapVehicleRows(devices, positions));
+  } catch (error) {
+    renderError(error);
+  }
+}
+
+const today = todayISODate();
+
+dateInput.min = today;
+dateInput.max = today;
+dateInput.value = today;
+dateInput.disabled = true;
+
+dateInput.addEventListener("change", loadReport);
 printButton.addEventListener("click", () => window.print());
 
-renderReport();
+loadReport();

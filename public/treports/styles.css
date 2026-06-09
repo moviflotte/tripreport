@@ -86,6 +86,11 @@ p {
   color: #172026;
 }
 
+.date-control input:disabled {
+  background: #edf2f4;
+  color: #5c6870;
+}
+
 .report-surface {
   background: #ffffff;
   border: 1px solid #d9e0e4;
