@@ -6,6 +6,7 @@ const tableTitle = document.querySelector("#tableTitle");
 const reportSummary = document.querySelector("#reportSummary");
 const emptyState = document.querySelector("#emptyState");
 const printButton = document.querySelector("#printReport");
+const printLogo = document.querySelector("#printLogo");
 
 const numberFormatter = new Intl.NumberFormat("fr-FR");
 const dateFormatter = new Intl.DateTimeFormat("fr-FR", {
@@ -161,5 +162,10 @@ dateInput.disabled = true;
 
 dateInput.addEventListener("change", loadReport);
 printButton.addEventListener("click", () => window.print());
+
+printLogo.src = `/img/logos/${window.location.hostname}.png`;
+printLogo.addEventListener("error", () => {
+  printLogo.hidden = true;
+});
 
 loadReport();
