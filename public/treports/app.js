@@ -6,6 +6,7 @@ const tableTitle = document.querySelector("#tableTitle");
 const reportSummary = document.querySelector("#reportSummary");
 const emptyState = document.querySelector("#emptyState");
 const printButton = document.querySelector("#printReport");
+const excelLink = document.querySelector("#excelReport");
 const printLogo = document.querySelector("#printLogo");
 
 const numberFormatter = new Intl.NumberFormat("fr-FR");
@@ -138,7 +139,13 @@ function renderError(error) {
   emptyState.hidden = false;
 }
 
+function updateExcelLink() {
+  const params = new URLSearchParams({ date: dateInput.value });
+  excelLink.href = `/treports/vehicles-xlsx?${params}`;
+}
+
 async function loadReport() {
+  updateExcelLink();
   setLoadingState();
 
   try {
@@ -162,6 +169,7 @@ dateInput.disabled = true;
 
 dateInput.addEventListener("change", loadReport);
 printButton.addEventListener("click", () => window.print());
+updateExcelLink();
 
 printLogo.src = `/img/logos/${window.location.hostname}.png`;
 printLogo.addEventListener("error", () => {

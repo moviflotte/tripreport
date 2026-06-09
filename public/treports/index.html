@@ -13,7 +13,7 @@
           <img id="printLogo" class="print-logo" alt="" />
           <div class="title-row">
             <h1>Rapport d'audit des véhicules</h1>
-            <span class="version-badge" aria-label="Version de l'application">v1.0.2</span>
+            <span class="version-badge" aria-label="Version de l'application">v1.0.3</span>
           </div>
           <p id="reportSummary">Kilométrage et niveau de carburant par véhicule.</p>
         </div>
@@ -27,7 +27,12 @@
       <section class="report-surface" aria-label="Relevés des véhicules">
         <div class="table-header">
           <strong id="tableTitle">Relevés</strong>
-          <button id="printReport" type="button">Imprimer</button>
+          <div class="report-actions">
+            <a id="excelReport" class="button-link" href="/treports/vehicles-xlsx" download>
+              Excel
+            </a>
+            <button id="printReport" type="button">Imprimer</button>
+          </div>
         </div>
 
         <div class="table-wrap">

@@ -115,7 +115,17 @@ p {
   font-size: 1rem;
 }
 
-.table-header button {
+.report-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.table-header button,
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 36px;
   border: 1px solid #b9c5cc;
   border-radius: 6px;
@@ -123,9 +133,11 @@ p {
   background: #ffffff;
   color: #172026;
   cursor: pointer;
+  text-decoration: none;
 }
 
-.table-header button:hover {
+.table-header button:hover,
+.button-link:hover {
   background: #edf2f4;
 }
 
@@ -218,7 +230,7 @@ tr:last-child td {
   }
 
   .date-control,
-  .table-header button {
+  .report-actions {
     display: none;
   }
 
