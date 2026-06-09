@@ -4,47 +4,10 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Rapport d'audit des véhicules</title>
-    <link rel="stylesheet" href="styles.css" />
+    <meta http-equiv="refresh" content="0; url=/treports/" />
+    <link rel="canonical" href="/treports/" />
   </head>
   <body>
-    <main class="app-shell">
-      <section class="report-toolbar" aria-label="Contrôles du rapport">
-        <div>
-          <h1>Rapport d'audit des véhicules</h1>
-          <p id="reportSummary">Kilométrage et niveau de carburant par véhicule.</p>
-        </div>
-
-        <label class="date-control">
-          <span>Date du rapport</span>
-          <input id="reportDate" type="date" />
-        </label>
-      </section>
-
-      <section class="report-surface" aria-label="Relevés des véhicules">
-        <div class="table-header">
-          <strong id="tableTitle">Relevés</strong>
-          <button id="printReport" type="button">Imprimer</button>
-        </div>
-
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th scope="col">Véhicule</th>
-                <th scope="col">Kilométrage</th>
-                <th scope="col">Niveau de carburant</th>
-              </tr>
-            </thead>
-            <tbody id="reportRows"></tbody>
-          </table>
-        </div>
-
-        <p id="emptyState" class="empty-state" hidden>
-          Aucun relevé de véhicule n'existe pour cette date.
-        </p>
-      </section>
-    </main>
-
-    <script src="app.js"></script>
+    <script>window.location.replace("/treports/");</script>
   </body>
 </html>
