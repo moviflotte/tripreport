@@ -2,6 +2,7 @@ import ExcelJS from "exceljs";
 
 const XLSX_CONTENT_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const ROUTE_CONCURRENCY = 6;
 
 function todayISODate() {
   return new Date().toISOString().slice(0, 10);
@@ -18,10 +19,19 @@ function formatDateFR(date) {
   }).format(parsedDate);
 }
 
+function dateRangeParams(date) {
+  return new URLSearchParams({
+    from: `${date}T00:00:00Z`,
+    to: `${date}T23:59:59Z`,
+  });
+}
+
 async function traccarFetchJson(env, path, cookieHeader) {
-  const upstream = new URL("http://gps.fleetmap.pt");
+  const upstream = new URL(
+    `/api/${path.replace(/^\//, "")}`,
+    "http://gps.fleetmap.pt"
+  );
   upstream.host = env.TRACCAR_SERVER || "gps.fleetmap.pt";
-  upstream.pathname = `/api${path}`;
 
   const response = await fetch(upstream, {
     headers: {
@@ -36,6 +46,38 @@ async function traccarFetchJson(env, path, cookieHeader) {
   }
 
   return response.json();
+}
+
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = [];
+  const running = new Set();
+  let index = 0;
+
+  const run = async (item, itemIndex) => {
+    const promise = Promise.resolve()
+      .then(() => mapper(item, itemIndex))
+      .then((result) => {
+        results[itemIndex] = result;
+      })
+      .finally(() => {
+        running.delete(promise);
+      });
+
+    running.add(promise);
+  };
+
+  while (index < items.length) {
+    while (running.size < limit && index < items.length) {
+      await run(items[index], index);
+      index++;
+    }
+
+    if (running.size) await Promise.race(running);
+  }
+
+  await Promise.all(running);
+
+  return results;
 }
 
 function findNumericValue(source, keys) {
@@ -62,7 +104,8 @@ function normalizeFuelLevel(value) {
   return Math.max(0, Math.min(100, percent));
 }
 
-function mapVehicleRows(devices, positions) {
+function mapVehicleRows(devices, positions, options = {}) {
+  const { useDeviceAttributes = true } = options;
   const positionByDeviceId = new Map(
     positions.map((position) => [position.deviceId, position])
   );
@@ -71,7 +114,7 @@ function mapVehicleRows(devices, positions) {
     .map((device) => {
       const position = positionByDeviceId.get(device.id);
       const positionAttributes = position?.attributes ?? {};
-      const deviceAttributes = device.attributes ?? {};
+      const deviceAttributes = useDeviceAttributes ? (device.attributes ?? {}) : {};
       const odometer =
         findNumericValue(positionAttributes, [
           "odometer",
@@ -102,6 +145,53 @@ function mapVehicleRows(devices, positions) {
       };
     })
     .sort((a, b) => a.vehicle.localeCompare(b.vehicle, "fr"));
+}
+
+function latestPositionForRoute(route) {
+  if (!Array.isArray(route) || route.length === 0) return null;
+
+  return [...route]
+    .sort((a, b) => {
+      const aTime = new Date(
+        a.fixTime || a.deviceTime || a.serverTime || 0
+      ).getTime();
+      const bTime = new Date(
+        b.fixTime || b.deviceTime || b.serverTime || 0
+      ).getTime();
+
+      return aTime - bTime;
+    })
+    .at(-1);
+}
+
+async function fetchHistoricalPositions(env, devices, date, cookieHeader) {
+  const range = dateRangeParams(date);
+  const positions = await mapWithConcurrency(
+    devices,
+    ROUTE_CONCURRENCY,
+    async (device) => {
+      const params = new URLSearchParams(range);
+      params.set("deviceId", device.id);
+
+      try {
+        return latestPositionForRoute(
+          await traccarFetchJson(
+            env,
+            `/reports/route?${params}`,
+            cookieHeader
+          )
+        );
+      } catch (error) {
+        console.warn(
+          `[treports] no route for device ${device.id} on ${date}`,
+          error
+        );
+        return null;
+      }
+    }
+  );
+
+  return positions.filter(Boolean);
 }
 
 function addVehicleRows(worksheet, rows) {
@@ -160,11 +250,14 @@ export async function onRequestGet(context) {
   try {
     const url = new URL(request.url);
     const date = url.searchParams.get("date") || todayISODate();
-    const [devices, positions] = await Promise.all([
-      traccarFetchJson(env, "/devices", cookieHeader),
-      traccarFetchJson(env, "/positions", cookieHeader),
-    ]);
-    const rows = mapVehicleRows(devices, positions);
+    const isToday = date === todayISODate();
+    const devices = await traccarFetchJson(env, "/devices", cookieHeader);
+    const positions = isToday
+      ? await traccarFetchJson(env, "/positions", cookieHeader)
+      : await fetchHistoricalPositions(env, devices, date, cookieHeader);
+    const rows = mapVehicleRows(devices, positions, {
+      useDeviceAttributes: isToday,
+    });
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Releves");
 

@@ -15,6 +15,8 @@ const dateFormatter = new Intl.DateTimeFormat("fr-FR", {
   month: "short",
   day: "2-digit",
 });
+const ROUTE_CONCURRENCY = 6;
+let activeLoadId = 0;
 
 function todayISODate() {
   const today = new Date();
@@ -25,6 +27,13 @@ function todayISODate() {
 function formatDate(date) {
   const parsedDate = new Date(`${date}T00:00:00`);
   return dateFormatter.format(parsedDate);
+}
+
+function dateRangeParams(date) {
+  return new URLSearchParams({
+    from: `${date}T00:00:00Z`,
+    to: `${date}T23:59:59Z`,
+  });
 }
 
 async function fetchJson(path) {
@@ -38,6 +47,38 @@ async function fetchJson(path) {
   }
 
   return response.json();
+}
+
+async function mapWithConcurrency(items, limit, mapper) {
+  const results = [];
+  const running = new Set();
+  let index = 0;
+
+  const run = async (item, itemIndex) => {
+    const promise = Promise.resolve()
+      .then(() => mapper(item, itemIndex))
+      .then((result) => {
+        results[itemIndex] = result;
+      })
+      .finally(() => {
+        running.delete(promise);
+      });
+
+    running.add(promise);
+  };
+
+  while (index < items.length) {
+    while (running.size < limit && index < items.length) {
+      await run(items[index], index);
+      index++;
+    }
+
+    if (running.size) await Promise.race(running);
+  }
+
+  await Promise.all(running);
+
+  return results;
 }
 
 function findNumericValue(source, keys) {
@@ -64,7 +105,8 @@ function normalizeFuelLevel(value) {
   return Math.max(0, Math.min(100, percent));
 }
 
-function mapVehicleRows(devices, positions) {
+function mapVehicleRows(devices, positions, options = {}) {
+  const { useDeviceAttributes = true } = options;
   const positionByDeviceId = new Map(
     positions.map((position) => [position.deviceId, position])
   );
@@ -73,7 +115,7 @@ function mapVehicleRows(devices, positions) {
     .map((device) => {
       const position = positionByDeviceId.get(device.id);
       const positionAttributes = position?.attributes ?? {};
-      const deviceAttributes = device.attributes ?? {};
+      const deviceAttributes = useDeviceAttributes ? (device.attributes ?? {}) : {};
       const odometer = findNumericValue(positionAttributes, [
         "odometer",
         "totalDistance",
@@ -94,11 +136,51 @@ function mapVehicleRows(devices, positions) {
     .sort((a, b) => a.vehicle.localeCompare(b.vehicle, "fr"));
 }
 
-function setLoadingState() {
+function latestPositionForRoute(route) {
+  if (!Array.isArray(route) || route.length === 0) return null;
+
+  return [...route].sort((a, b) => {
+    const aTime = new Date(a.fixTime || a.deviceTime || a.serverTime || 0).getTime();
+    const bTime = new Date(b.fixTime || b.deviceTime || b.serverTime || 0).getTime();
+
+    return aTime - bTime;
+  }).at(-1);
+}
+
+async function fetchHistoricalPositions(devices, date) {
+  const range = dateRangeParams(date);
+  const positions = await mapWithConcurrency(
+    devices,
+    ROUTE_CONCURRENCY,
+    async (device) => {
+      const params = new URLSearchParams(range);
+      params.set("deviceId", device.id);
+
+      try {
+        return latestPositionForRoute(
+          await fetchJson(`/reports/route?${params}`)
+        );
+      } catch (error) {
+        console.warn(
+          `[treports] no route for device ${device.id} on ${date}`,
+          error
+        );
+        return null;
+      }
+    }
+  );
+
+  return positions.filter(Boolean);
+}
+
+function setLoadingState(mode) {
   const selectedDate = dateInput.value;
 
   tableTitle.textContent = `Relevés du ${formatDate(selectedDate)}`;
-  reportSummary.textContent = "Chargement des véhicules depuis l'API...";
+  reportSummary.textContent =
+    mode === "historical"
+      ? "Chargement de l'historique des véhicules..."
+      : "Chargement des véhicules depuis l'API...";
   reportRows.innerHTML = "";
   emptyState.hidden = true;
 }
@@ -145,27 +227,34 @@ function updateExcelLink() {
 }
 
 async function loadReport() {
+  const loadId = ++activeLoadId;
+  const selectedDate = dateInput.value;
+  const isToday = selectedDate === today;
+
   updateExcelLink();
-  setLoadingState();
+  setLoadingState(isToday ? "latest" : "historical");
 
   try {
-    const [devices, positions] = await Promise.all([
-      fetchJson("/devices"),
-      fetchJson("/positions"),
-    ]);
+    const devices = await fetchJson("/devices");
+    const positions = isToday
+      ? await fetchJson("/positions")
+      : await fetchHistoricalPositions(devices, selectedDate);
 
-    renderRows(mapVehicleRows(devices, positions));
+    if (loadId !== activeLoadId) return;
+    renderRows(
+      mapVehicleRows(devices, positions, { useDeviceAttributes: isToday })
+    );
   } catch (error) {
+    if (loadId !== activeLoadId) return;
     renderError(error);
   }
 }
 
 const today = todayISODate();
 
-dateInput.min = today;
 dateInput.max = today;
 dateInput.value = today;
-dateInput.disabled = true;
+dateInput.disabled = false;
 
 dateInput.addEventListener("change", loadReport);
 printButton.addEventListener("click", () => window.print());
