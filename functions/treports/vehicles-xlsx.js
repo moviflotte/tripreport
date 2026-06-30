@@ -19,10 +19,10 @@ function formatDateFR(date) {
   }).format(parsedDate);
 }
 
-function dateRangeParams(date) {
+function dateRangeParams(date, time = "23:59:59") {
   return new URLSearchParams({
     from: `${date}T00:00:00Z`,
-    to: `${date}T23:59:59Z`,
+    to: `${date}T${time}Z`,
   });
 }
 
@@ -167,8 +167,8 @@ function latestPositionForRoute(route) {
     .at(-1);
 }
 
-async function fetchHistoricalPositions(env, devices, date, cookieHeader) {
-  const range = dateRangeParams(date);
+async function fetchHistoricalPositions(env, devices, date, time, cookieHeader) {
+  const range = dateRangeParams(date, time);
   const positions = await mapWithConcurrency(
     devices,
     ROUTE_CONCURRENCY,
@@ -255,17 +255,18 @@ export async function onRequestGet(context) {
   try {
     const url = new URL(request.url);
     const date = url.searchParams.get("date") || todayISODate();
-    const isToday = date === todayISODate();
+    const time = url.searchParams.get("time") || "23:59:59";
+    const isLive = date === todayISODate() && time === "23:59:59";
     const [devices, drivers] = await Promise.all([
       traccarFetchJson(env, "/devices", cookieHeader),
       traccarFetchJson(env, "/drivers", cookieHeader).catch(() => []),
     ]);
     const driverByUniqueId = new Map(drivers.map((d) => [d.uniqueId, d.name]));
-    const positions = isToday
+    const positions = isLive
       ? await traccarFetchJson(env, "/positions", cookieHeader)
-      : await fetchHistoricalPositions(env, devices, date, cookieHeader);
+      : await fetchHistoricalPositions(env, devices, date, time, cookieHeader);
     const rows = mapVehicleRows(devices, positions, {
-      useDeviceAttributes: isToday,
+      useDeviceAttributes: isLive,
       driverByUniqueId,
     });
     const workbook = new ExcelJS.Workbook();

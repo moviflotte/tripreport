@@ -81,6 +81,16 @@ p {
   font-weight: 650;
 }
 
+.date-time-inputs {
+  display: flex;
+  gap: 8px;
+}
+
+.date-time-inputs input {
+  flex: 1;
+  min-width: 0;
+}
+
 .date-control input {
   min-height: 42px;
   border: 1px solid #c9d2d8;

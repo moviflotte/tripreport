@@ -1,6 +1,7 @@
 const API_BASE = "/api";
 
 const dateInput = document.querySelector("#reportDate");
+const timeInput = document.querySelector("#reportTime");
 const reportRows = document.querySelector("#reportRows");
 const tableTitle = document.querySelector("#tableTitle");
 const reportSummary = document.querySelector("#reportSummary");
@@ -29,10 +30,10 @@ function formatDate(date) {
   return dateFormatter.format(parsedDate);
 }
 
-function dateRangeParams(date) {
+function dateRangeParams(date, time = "23:59:59") {
   return new URLSearchParams({
     from: `${date}T00:00:00Z`,
-    to: `${date}T23:59:59Z`,
+    to: `${date}T${time}Z`,
   });
 }
 
@@ -150,8 +151,8 @@ function latestPositionForRoute(route) {
   }).at(-1);
 }
 
-async function fetchHistoricalPositions(devices, date) {
-  const range = dateRangeParams(date);
+async function fetchHistoricalPositions(devices, date, time) {
+  const range = dateRangeParams(date, time);
   const positions = await mapWithConcurrency(
     devices,
     ROUTE_CONCURRENCY,
@@ -227,17 +228,18 @@ function renderError(error) {
 }
 
 function updateExcelLink() {
-  const params = new URLSearchParams({ date: dateInput.value });
+  const params = new URLSearchParams({ date: dateInput.value, time: timeInput.value });
   excelLink.href = `/treports/vehicles-xlsx?${params}`;
 }
 
 async function loadReport() {
   const loadId = ++activeLoadId;
   const selectedDate = dateInput.value;
-  const isToday = selectedDate === today;
+  const selectedTime = timeInput.value;
+  const isLive = selectedDate === today && selectedTime === "23:59:59";
 
   updateExcelLink();
-  setLoadingState(isToday ? "latest" : "historical");
+  setLoadingState(isLive ? "latest" : "historical");
 
   try {
     const [devices, drivers] = await Promise.all([
@@ -245,13 +247,13 @@ async function loadReport() {
       fetchJson("/drivers").catch(() => []),
     ]);
     const driverByUniqueId = new Map(drivers.map((d) => [d.uniqueId, d.name]));
-    const positions = isToday
+    const positions = isLive
       ? await fetchJson("/positions")
-      : await fetchHistoricalPositions(devices, selectedDate);
+      : await fetchHistoricalPositions(devices, selectedDate, selectedTime);
 
     if (loadId !== activeLoadId) return;
     renderRows(
-      mapVehicleRows(devices, positions, { useDeviceAttributes: isToday, driverByUniqueId })
+      mapVehicleRows(devices, positions, { useDeviceAttributes: isLive, driverByUniqueId })
     );
   } catch (error) {
     if (loadId !== activeLoadId) return;
@@ -265,7 +267,10 @@ dateInput.max = today;
 dateInput.value = today;
 dateInput.disabled = false;
 
+timeInput.value = "23:59:59";
+
 dateInput.addEventListener("change", loadReport);
+timeInput.addEventListener("change", loadReport);
 printButton.addEventListener("click", () => window.print());
 updateExcelLink();
 
