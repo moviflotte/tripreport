@@ -84,6 +84,7 @@ p {
 .date-time-inputs {
   display: flex;
   gap: 8px;
+  width: 100%;
 }
 
 .date-time-inputs input {
