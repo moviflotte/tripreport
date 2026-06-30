@@ -127,23 +127,23 @@ function mapVehicleRows(devices, positions, options = {}) {
           "distance",
         ]);
       const fuelLevel =
-        findNumericValue(positionAttributes, [
-          "fuelLevel",
-          "fuel",
-          "fuelPercent",
-        ]) ??
-        findNumericValue(deviceAttributes, [
-          "fuelLevel",
-          "fuel",
-          "fuelPercent",
-        ]);
+        findNumericValue(positionAttributes, ["fuelLevel", "fuel", "fuelPercent"]) ??
+        findNumericValue(deviceAttributes, ["fuelLevel", "fuel", "fuelPercent"]);
+      const fuelCapacity = findNumericValue(device.attributes ?? {}, [
+        "fuel_tank_capacity", "fuelCapacity", "tankCapacity", "tank_capacity", "capacity",
+      ]);
+      const normalizedFuelLevel = normalizeFuelLevel(fuelLevel);
+      const fuelLiters = normalizedFuelLevel != null && fuelCapacity
+        ? Math.round(normalizedFuelLevel / 100 * fuelCapacity)
+        : null;
       const driverUniqueId = positionAttributes.driverUniqueId ?? null;
       const driver = driverUniqueId ? (driverByUniqueId.get(driverUniqueId) ?? driverUniqueId) : null;
 
       return {
         vehicle: device.name || device.uniqueId || `Véhicule ${device.id}`,
         odometer: normalizeKilometers(odometer),
-        fuelLevel: normalizeFuelLevel(fuelLevel),
+        fuelLevel: normalizedFuelLevel,
+        fuelLiters,
         driver,
       };
     })
@@ -199,10 +199,14 @@ async function fetchHistoricalPositions(env, devices, date, time, cookieHeader) 
 
 function addVehicleRows(worksheet, rows) {
   rows.forEach((row) => {
+    const fuelParts = [
+      row.fuelLevel != null ? `${Math.round(row.fuelLevel)}%` : null,
+      row.fuelLiters != null ? `${row.fuelLiters} L` : null,
+    ].filter(Boolean);
     worksheet.addRow({
       vehicle: row.vehicle,
       odometer: row.odometer == null ? null : Math.round(row.odometer),
-      fuelLevel: row.fuelLevel == null ? null : Math.round(row.fuelLevel),
+      fuelLevel: fuelParts.length ? fuelParts.join(" / ") : null,
       driver: row.driver ?? null,
     });
   });
@@ -212,7 +216,7 @@ function configureWorksheet(worksheet) {
   worksheet.columns = [
     { key: "vehicle", width: 36 },
     { key: "odometer", width: 18, style: { numFmt: '#,##0 "km"' } },
-    { key: "fuelLevel", width: 20, style: { numFmt: '0"%"' } },
+    { key: "fuelLevel", width: 24 },
     { key: "driver", width: 28 },
   ];
 }

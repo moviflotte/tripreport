@@ -127,13 +127,21 @@ function mapVehicleRows(devices, positions, options = {}) {
         "fuel",
         "fuelPercent",
       ]) ?? findNumericValue(deviceAttributes, ["fuelLevel", "fuel", "fuelPercent"]);
+      const fuelCapacity = findNumericValue(device.attributes ?? {}, [
+        "fuel_tank_capacity", "fuelCapacity", "tankCapacity", "tank_capacity", "capacity",
+      ]);
+      const normalizedFuelLevel = normalizeFuelLevel(fuelLevel);
+      const fuelLiters = normalizedFuelLevel != null && fuelCapacity
+        ? Math.round(normalizedFuelLevel / 100 * fuelCapacity)
+        : null;
       const driverUniqueId = positionAttributes.driverUniqueId ?? null;
       const driver = driverUniqueId ? (driverByUniqueId.get(driverUniqueId) ?? driverUniqueId) : null;
 
       return {
         vehicle: device.name || device.uniqueId || `Véhicule ${device.id}`,
         odometer: normalizeKilometers(odometer),
-        fuelLevel: normalizeFuelLevel(fuelLevel),
+        fuelLevel: normalizedFuelLevel,
+        fuelLiters,
         driver,
       };
     })
@@ -208,8 +216,11 @@ function renderRows(rows) {
     vehicleCell.textContent = item.vehicle;
     odometerCell.textContent =
       item.odometer == null ? "—" : `${numberFormatter.format(Math.round(item.odometer))} km`;
-    fuelCell.textContent =
-      item.fuelLevel == null ? "—" : `${numberFormatter.format(Math.round(item.fuelLevel))}%`;
+    const fuelParts = [
+      item.fuelLevel != null ? `${numberFormatter.format(Math.round(item.fuelLevel))}%` : null,
+      item.fuelLiters != null ? `${numberFormatter.format(item.fuelLiters)} L` : null,
+    ].filter(Boolean);
+    fuelCell.textContent = fuelParts.length ? fuelParts.join(" / ") : "—";
     driverCell.textContent = item.driver ?? "—";
 
     row.append(vehicleCell, odometerCell, fuelCell, driverCell);
