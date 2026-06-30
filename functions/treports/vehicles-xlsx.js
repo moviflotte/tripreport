@@ -105,7 +105,7 @@ function normalizeFuelLevel(value) {
 }
 
 function mapVehicleRows(devices, positions, options = {}) {
-  const { useDeviceAttributes = true } = options;
+  const { useDeviceAttributes = true, driverByUniqueId = new Map() } = options;
   const positionByDeviceId = new Map(
     positions.map((position) => [position.deviceId, position])
   );
@@ -137,11 +137,14 @@ function mapVehicleRows(devices, positions, options = {}) {
           "fuel",
           "fuelPercent",
         ]);
+      const driverUniqueId = positionAttributes.driverUniqueId ?? null;
+      const driver = driverUniqueId ? (driverByUniqueId.get(driverUniqueId) ?? driverUniqueId) : null;
 
       return {
         vehicle: device.name || device.uniqueId || `Véhicule ${device.id}`,
         odometer: normalizeKilometers(odometer),
         fuelLevel: normalizeFuelLevel(fuelLevel),
+        driver,
       };
     })
     .sort((a, b) => a.vehicle.localeCompare(b.vehicle, "fr"));
@@ -200,6 +203,7 @@ function addVehicleRows(worksheet, rows) {
       vehicle: row.vehicle,
       odometer: row.odometer == null ? null : Math.round(row.odometer),
       fuelLevel: row.fuelLevel == null ? null : Math.round(row.fuelLevel),
+      driver: row.driver ?? null,
     });
   });
 }
@@ -209,6 +213,7 @@ function configureWorksheet(worksheet) {
     { key: "vehicle", width: 36 },
     { key: "odometer", width: 18, style: { numFmt: '#,##0 "km"' } },
     { key: "fuelLevel", width: 20, style: { numFmt: '0"%"' } },
+    { key: "driver", width: 28 },
   ];
 }
 
@@ -223,7 +228,7 @@ function styleWorksheet(worksheet) {
   };
 
   worksheet.views = [{ state: "frozen", ySplit: 4 }];
-  worksheet.autoFilter = "A4:C4";
+  worksheet.autoFilter = "A4:D4";
 
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber < 4) return;
@@ -251,12 +256,17 @@ export async function onRequestGet(context) {
     const url = new URL(request.url);
     const date = url.searchParams.get("date") || todayISODate();
     const isToday = date === todayISODate();
-    const devices = await traccarFetchJson(env, "/devices", cookieHeader);
+    const [devices, drivers] = await Promise.all([
+      traccarFetchJson(env, "/devices", cookieHeader),
+      traccarFetchJson(env, "/drivers", cookieHeader).catch(() => []),
+    ]);
+    const driverByUniqueId = new Map(drivers.map((d) => [d.uniqueId, d.name]));
     const positions = isToday
       ? await traccarFetchJson(env, "/positions", cookieHeader)
       : await fetchHistoricalPositions(env, devices, date, cookieHeader);
     const rows = mapVehicleRows(devices, positions, {
       useDeviceAttributes: isToday,
+      driverByUniqueId,
     });
     const workbook = new ExcelJS.Workbook();
     const worksheet = workbook.addWorksheet("Releves");
@@ -268,7 +278,7 @@ export async function onRequestGet(context) {
     worksheet.addRow(["Rapport d'audit des véhicules"]);
     worksheet.addRow([`Date du rapport: ${formatDateFR(date)}`]);
     worksheet.addRow([]);
-    worksheet.addRow(["Véhicule", "Kilométrage", "Niveau de carburant"]);
+    worksheet.addRow(["Véhicule", "Kilométrage", "Niveau de carburant", "Dernier conducteur"]);
     addVehicleRows(worksheet, rows);
     styleWorksheet(worksheet);
 

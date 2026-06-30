@@ -106,7 +106,7 @@ function normalizeFuelLevel(value) {
 }
 
 function mapVehicleRows(devices, positions, options = {}) {
-  const { useDeviceAttributes = true } = options;
+  const { useDeviceAttributes = true, driverByUniqueId = new Map() } = options;
   const positionByDeviceId = new Map(
     positions.map((position) => [position.deviceId, position])
   );
@@ -126,11 +126,14 @@ function mapVehicleRows(devices, positions, options = {}) {
         "fuel",
         "fuelPercent",
       ]) ?? findNumericValue(deviceAttributes, ["fuelLevel", "fuel", "fuelPercent"]);
+      const driverUniqueId = positionAttributes.driverUniqueId ?? null;
+      const driver = driverUniqueId ? (driverByUniqueId.get(driverUniqueId) ?? driverUniqueId) : null;
 
       return {
         vehicle: device.name || device.uniqueId || `Véhicule ${device.id}`,
         odometer: normalizeKilometers(odometer),
         fuelLevel: normalizeFuelLevel(fuelLevel),
+        driver,
       };
     })
     .sort((a, b) => a.vehicle.localeCompare(b.vehicle, "fr"));
@@ -199,14 +202,16 @@ function renderRows(rows) {
     const vehicleCell = document.createElement("td");
     const odometerCell = document.createElement("td");
     const fuelCell = document.createElement("td");
+    const driverCell = document.createElement("td");
 
     vehicleCell.textContent = item.vehicle;
     odometerCell.textContent =
       item.odometer == null ? "—" : `${numberFormatter.format(Math.round(item.odometer))} km`;
     fuelCell.textContent =
       item.fuelLevel == null ? "—" : `${numberFormatter.format(Math.round(item.fuelLevel))}%`;
+    driverCell.textContent = item.driver ?? "—";
 
-    row.append(vehicleCell, odometerCell, fuelCell);
+    row.append(vehicleCell, odometerCell, fuelCell, driverCell);
     reportRows.append(row);
   });
 }
@@ -235,14 +240,18 @@ async function loadReport() {
   setLoadingState(isToday ? "latest" : "historical");
 
   try {
-    const devices = await fetchJson("/devices");
+    const [devices, drivers] = await Promise.all([
+      fetchJson("/devices"),
+      fetchJson("/drivers").catch(() => []),
+    ]);
+    const driverByUniqueId = new Map(drivers.map((d) => [d.uniqueId, d.name]));
     const positions = isToday
       ? await fetchJson("/positions")
       : await fetchHistoricalPositions(devices, selectedDate);
 
     if (loadId !== activeLoadId) return;
     renderRows(
-      mapVehicleRows(devices, positions, { useDeviceAttributes: isToday })
+      mapVehicleRows(devices, positions, { useDeviceAttributes: isToday, driverByUniqueId })
     );
   } catch (error) {
     if (loadId !== activeLoadId) return;
