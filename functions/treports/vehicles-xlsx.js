@@ -20,9 +20,11 @@ function formatDateFR(date) {
 }
 
 function dateRangeParams(date, time = "23:59:59") {
+  const to = new Date(`${date}T${time}Z`);
+  const from = new Date(to.getTime() - 24 * 60 * 60 * 1000);
   return new URLSearchParams({
-    from: `${date}T00:00:00Z`,
-    to: `${date}T${time}Z`,
+    from: from.toISOString(),
+    to: to.toISOString(),
   });
 }
 
@@ -199,14 +201,11 @@ async function fetchHistoricalPositions(env, devices, date, time, cookieHeader) 
 
 function addVehicleRows(worksheet, rows) {
   rows.forEach((row) => {
-    const fuelParts = [
-      row.fuelLevel != null ? `${Math.round(row.fuelLevel)}%` : null,
-      row.fuelLiters != null ? `${row.fuelLiters} L` : null,
-    ].filter(Boolean);
     worksheet.addRow({
       vehicle: row.vehicle,
       odometer: row.odometer == null ? null : Math.round(row.odometer),
-      fuelLevel: fuelParts.length ? fuelParts.join(" / ") : null,
+      fuelLevel: row.fuelLevel == null ? null : Math.round(row.fuelLevel),
+      fuelLiters: row.fuelLiters ?? null,
       driver: row.driver ?? null,
     });
   });
@@ -216,7 +215,8 @@ function configureWorksheet(worksheet) {
   worksheet.columns = [
     { key: "vehicle", width: 36 },
     { key: "odometer", width: 18, style: { numFmt: '#,##0 "km"' } },
-    { key: "fuelLevel", width: 24 },
+    { key: "fuelLevel", width: 18, style: { numFmt: '0"%"' } },
+    { key: "fuelLiters", width: 18, style: { numFmt: '#,##0 "L"' } },
     { key: "driver", width: 28 },
   ];
 }
@@ -232,7 +232,7 @@ function styleWorksheet(worksheet) {
   };
 
   worksheet.views = [{ state: "frozen", ySplit: 4 }];
-  worksheet.autoFilter = "A4:D4";
+  worksheet.autoFilter = "A4:E4";
 
   worksheet.eachRow((row, rowNumber) => {
     if (rowNumber < 4) return;
@@ -283,7 +283,7 @@ export async function onRequestGet(context) {
     worksheet.addRow(["Rapport d'audit des véhicules"]);
     worksheet.addRow([`Date du rapport: ${formatDateFR(date)}`]);
     worksheet.addRow([]);
-    worksheet.addRow(["Véhicule", "Kilométrage", "Niveau de carburant", "Dernier conducteur"]);
+    worksheet.addRow(["Véhicule", "Kilométrage", "Carburant (%)", "Carburant (L)", "Dernier conducteur"]);
     addVehicleRows(worksheet, rows);
     styleWorksheet(worksheet);
 

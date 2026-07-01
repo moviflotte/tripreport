@@ -1,5 +1,6 @@
 const API_BASE = "/api";
 
+const versionBadge = document.querySelector(".version-badge");
 const dateInput = document.querySelector("#reportDate");
 const timeInput = document.querySelector("#reportTime");
 const reportRows = document.querySelector("#reportRows");
@@ -31,9 +32,11 @@ function formatDate(date) {
 }
 
 function dateRangeParams(date, time = "23:59:59") {
+  const to = new Date(`${date}T${time}Z`);
+  const from = new Date(to.getTime() - 24 * 60 * 60 * 1000);
   return new URLSearchParams({
-    from: `${date}T00:00:00Z`,
-    to: `${date}T${time}Z`,
+    from: from.toISOString(),
+    to: to.toISOString(),
   });
 }
 
@@ -284,6 +287,11 @@ dateInput.addEventListener("change", loadReport);
 timeInput.addEventListener("change", loadReport);
 printButton.addEventListener("click", () => window.print());
 updateExcelLink();
+
+fetch("/treports/version")
+  .then((r) => r.json())
+  .then(({ version }) => { versionBadge.textContent = `v${version}`; })
+  .catch(() => {});
 
 printLogo.src = `/img/logos/${window.location.hostname}.png`;
 printLogo.addEventListener("error", () => {
