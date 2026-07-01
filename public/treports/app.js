@@ -236,20 +236,20 @@ function renderRows(rows) {
     const row = document.createElement("tr");
     const vehicleCell = document.createElement("td");
     const odometerCell = document.createElement("td");
-    const fuelCell = document.createElement("td");
+    const fuelLevelCell = document.createElement("td");
+    const fuelLitersCell = document.createElement("td");
     const driverCell = document.createElement("td");
 
     vehicleCell.textContent = item.vehicle;
     odometerCell.textContent =
       item.odometer == null ? "—" : `${numberFormatter.format(Math.round(item.odometer))} km`;
-    const fuelParts = [
-      item.fuelLevel != null ? `${numberFormatter.format(Math.round(item.fuelLevel))}%` : null,
-      item.fuelLiters != null ? `${numberFormatter.format(item.fuelLiters)} L` : null,
-    ].filter(Boolean);
-    fuelCell.textContent = fuelParts.length ? fuelParts.join(" / ") : "—";
+    fuelLevelCell.textContent =
+      item.fuelLevel == null ? "—" : `${numberFormatter.format(Math.round(item.fuelLevel))}%`;
+    fuelLitersCell.textContent =
+      item.fuelLiters == null ? "—" : `${numberFormatter.format(item.fuelLiters)} L`;
     driverCell.textContent = item.driver ?? "—";
 
-    row.append(vehicleCell, odometerCell, fuelCell, driverCell);
+    row.append(vehicleCell, odometerCell, fuelLevelCell, fuelLitersCell, driverCell);
     reportRows.append(row);
   });
 }
