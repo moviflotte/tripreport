@@ -1,6 +1,8 @@
 const API_BASE = "/api";
 
 const versionBadge = document.querySelector(".version-badge");
+const progressBar = document.querySelector("#progressBar");
+const progressFill = document.querySelector("#progressFill");
 const dateInput = document.querySelector("#reportDate");
 const timeInput = document.querySelector("#reportTime");
 const reportRows = document.querySelector("#reportRows");
@@ -162,8 +164,9 @@ function latestPositionForRoute(route) {
   }).at(-1);
 }
 
-async function fetchHistoricalPositions(devices, date, time) {
+async function fetchHistoricalPositions(devices, date, time, onProgress) {
   const range = dateRangeParams(date, time);
+  let done = 0;
   const positions = await mapWithConcurrency(
     devices,
     ROUTE_CONCURRENCY,
@@ -181,11 +184,29 @@ async function fetchHistoricalPositions(devices, date, time) {
           error
         );
         return null;
+      } finally {
+        onProgress?.(++done, devices.length);
       }
     }
   );
 
   return positions.filter(Boolean);
+}
+
+function showProgress(indeterminate) {
+  progressBar.hidden = false;
+  progressBar.classList.toggle("indeterminate", indeterminate);
+  progressFill.style.width = indeterminate ? "" : "0%";
+}
+
+function updateProgress(done, total) {
+  progressFill.style.width = `${Math.round(done / total * 100)}%`;
+}
+
+function hideProgress() {
+  progressBar.hidden = true;
+  progressBar.classList.remove("indeterminate");
+  progressFill.style.width = "0%";
 }
 
 function setLoadingState(mode) {
@@ -198,9 +219,11 @@ function setLoadingState(mode) {
       : "Chargement des véhicules depuis l'API...";
   reportRows.innerHTML = "";
   emptyState.hidden = true;
+  showProgress(mode === "latest");
 }
 
 function renderRows(rows) {
+  hideProgress();
   const selectedDate = dateInput.value;
 
   tableTitle.textContent = `Relevés du ${formatDate(selectedDate)}`;
@@ -232,6 +255,7 @@ function renderRows(rows) {
 }
 
 function renderError(error) {
+  hideProgress();
   console.error("[treports] failed to load vehicles", error);
 
   tableTitle.textContent = "Relevés indisponibles";
@@ -263,7 +287,7 @@ async function loadReport() {
     const driverByUniqueId = new Map(drivers.map((d) => [d.uniqueId, d.name]));
     const positions = isLive
       ? await fetchJson("/positions")
-      : await fetchHistoricalPositions(devices, selectedDate, selectedTime);
+      : await fetchHistoricalPositions(devices, selectedDate, selectedTime, updateProgress);
 
     if (loadId !== activeLoadId) return;
     renderRows(

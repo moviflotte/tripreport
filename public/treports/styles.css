@@ -152,6 +152,28 @@ p {
   background: #edf2f4;
 }
 
+.progress-bar {
+  height: 3px;
+  background: #edf0f2;
+}
+
+.progress-fill {
+  height: 100%;
+  width: 0;
+  background: #39464e;
+  transition: width 0.2s ease;
+}
+
+.progress-bar.indeterminate .progress-fill {
+  width: 40%;
+  animation: progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes progress-slide {
+  0%   { margin-left: -40%; }
+  100% { margin-left: 100%; }
+}
+
 .table-wrap {
   overflow-x: auto;
 }
