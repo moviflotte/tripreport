@@ -1,3 +1,9 @@
+import {
+  todayISODate,
+  mapVehicleRows,
+  fetchHistoricalPositions,
+} from "./report-utils.js";
+
 const API_BASE = "/api";
 
 const versionBadge = document.querySelector(".version-badge");
@@ -19,27 +25,11 @@ const dateFormatter = new Intl.DateTimeFormat("fr-FR", {
   month: "short",
   day: "2-digit",
 });
-const ROUTE_CONCURRENCY = 6;
 let activeLoadId = 0;
-
-function todayISODate() {
-  const today = new Date();
-  const offsetMs = today.getTimezoneOffset() * 60 * 1000;
-  return new Date(today.getTime() - offsetMs).toISOString().slice(0, 10);
-}
 
 function formatDate(date) {
   const parsedDate = new Date(`${date}T00:00:00`);
   return dateFormatter.format(parsedDate);
-}
-
-function dateRangeParams(date, time = "23:59:59") {
-  const to = new Date(`${date}T${time}Z`);
-  const from = new Date(to.getTime() - 24 * 60 * 60 * 1000);
-  return new URLSearchParams({
-    from: from.toISOString(),
-    to: to.toISOString(),
-  });
 }
 
 async function fetchJson(path) {
@@ -53,144 +43,6 @@ async function fetchJson(path) {
   }
 
   return response.json();
-}
-
-async function mapWithConcurrency(items, limit, mapper) {
-  const results = [];
-  const running = new Set();
-  let index = 0;
-
-  const run = async (item, itemIndex) => {
-    const promise = Promise.resolve()
-      .then(() => mapper(item, itemIndex))
-      .then((result) => {
-        results[itemIndex] = result;
-      })
-      .finally(() => {
-        running.delete(promise);
-      });
-
-    running.add(promise);
-  };
-
-  while (index < items.length) {
-    while (running.size < limit && index < items.length) {
-      await run(items[index], index);
-      index++;
-    }
-
-    if (running.size) await Promise.race(running);
-  }
-
-  await Promise.all(running);
-
-  return results;
-}
-
-function findNumericValue(source, keys) {
-  for (const key of keys) {
-    const value = source?.[key];
-    const number = Number(value);
-
-    if (Number.isFinite(number)) return number;
-  }
-
-  return null;
-}
-
-function normalizeKilometers(value) {
-  if (value == null) return null;
-
-  return value > 100000 ? value / 1000 : value;
-}
-
-function normalizeFuelLevel(value) {
-  if (value == null) return null;
-
-  const percent = value > 0 && value <= 1 ? value * 100 : value;
-  return Math.max(0, Math.min(100, percent));
-}
-
-function mapVehicleRows(devices, positions, options = {}) {
-  const { useDeviceAttributes = true, driverByUniqueId = new Map() } = options;
-  const positionByDeviceId = new Map(
-    positions.map((position) => [position.deviceId, position])
-  );
-
-  return devices
-    .map((device) => {
-      const position = positionByDeviceId.get(device.id);
-      const positionAttributes = position?.attributes ?? {};
-      const deviceAttributes = useDeviceAttributes ? (device.attributes ?? {}) : {};
-      const odometer = findNumericValue(positionAttributes, [
-        "odometer",
-        "totalDistance",
-        "distance",
-      ]) ?? findNumericValue(deviceAttributes, ["odometer", "totalDistance", "distance"]);
-      const fuelLevel = findNumericValue(positionAttributes, [
-        "fuelLevel",
-        "fuel",
-        "fuelPercent",
-      ]) ?? findNumericValue(deviceAttributes, ["fuelLevel", "fuel", "fuelPercent"]);
-      const fuelCapacity = findNumericValue(device.attributes ?? {}, [
-        "fuel_tank_capacity", "fuelCapacity", "tankCapacity", "tank_capacity", "capacity",
-      ]);
-      const normalizedFuelLevel = normalizeFuelLevel(fuelLevel);
-      const fuelLiters = normalizedFuelLevel != null && fuelCapacity
-        ? Math.round(normalizedFuelLevel / 100 * fuelCapacity)
-        : null;
-      const driverUniqueId = positionAttributes.driverUniqueId ?? null;
-      const driver = driverUniqueId ? (driverByUniqueId.get(driverUniqueId) ?? driverUniqueId) : null;
-
-      return {
-        vehicle: device.name || device.uniqueId || `Véhicule ${device.id}`,
-        odometer: normalizeKilometers(odometer),
-        fuelLevel: normalizedFuelLevel,
-        fuelLiters,
-        driver,
-      };
-    })
-    .sort((a, b) => a.vehicle.localeCompare(b.vehicle, "fr"));
-}
-
-function latestPositionForRoute(route) {
-  if (!Array.isArray(route) || route.length === 0) return null;
-
-  return [...route].sort((a, b) => {
-    const aTime = new Date(a.fixTime || a.deviceTime || a.serverTime || 0).getTime();
-    const bTime = new Date(b.fixTime || b.deviceTime || b.serverTime || 0).getTime();
-
-    return aTime - bTime;
-  }).at(-1);
-}
-
-async function fetchHistoricalPositions(devices, date, time, onProgress) {
-  const range = dateRangeParams(date, time);
-  let done = 0;
-  const positions = await mapWithConcurrency(
-    devices,
-    ROUTE_CONCURRENCY,
-    async (device) => {
-      const params = new URLSearchParams(range);
-      params.set("deviceId", device.id);
-
-      try {
-        return latestPositionForRoute(
-          await fetchJson(`/reports/route?${params}`)
-        );
-      } catch (error) {
-        console.warn(
-          `[treports] no route for device ${device.id} on ${date}`,
-          error
-        );
-        return null;
-      } finally {
-        onProgress?.(++done, devices.length);
-      }
-    }
-  );
-
-  return positions.filter(Boolean);
 }
 
 function showProgress(indeterminate) {
@@ -287,7 +139,7 @@ async function loadReport() {
     const driverByUniqueId = new Map(drivers.map((d) => [d.uniqueId, d.name]));
     const positions = isLive
       ? await fetchJson("/positions")
-      : await fetchHistoricalPositions(devices, selectedDate, selectedTime, updateProgress);
+      : await fetchHistoricalPositions(devices, selectedDate, selectedTime, fetchJson, updateProgress);
 
     if (loadId !== activeLoadId) return;
     renderRows(
