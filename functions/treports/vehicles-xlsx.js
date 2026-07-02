@@ -15,15 +15,11 @@ function formatDateFR(date) {
   }).format(parsedDate);
 }
 
-// Same host-swap technique as functions/api/[[path]].js, forwarding the full
-// original request (all headers, not just a hand-picked Cookie/Accept subset)
-// so this doesn't silently diverge from what the browser's /api/* calls send.
-async function traccarFetchJson(env, request, path) {
+// Proxies through the same /api route the browser uses (functions/api/[[path]].js)
+// instead of hand-rolling a direct-to-Traccar fetch, so both surfaces share one
+// tested path to the upstream server and can't drift out of sync.
+async function traccarFetchJson(request, path) {
   const upstream = new URL(`/api/${path.replace(/^\//, "")}`, request.url);
-  upstream.host = env.TRACCAR_SERVER || "gps.fleetmap.pt";
-  upstream.protocol = "http:";
-  upstream.port = "80";
-
   const response = await fetch(new Request(upstream, request));
 
   if (!response.ok) {
@@ -81,7 +77,7 @@ function styleWorksheet(worksheet) {
 }
 
 export async function onRequestGet(context) {
-  const { request, env } = context;
+  const { request } = context;
   const cookieHeader = request.headers.get("cookie");
 
   if (!cookieHeader) {
@@ -97,28 +93,13 @@ export async function onRequestGet(context) {
     const time = url.searchParams.get("time") || "23:59:59";
     const isLive = date === todayISODate() && time === "23:59:59";
     const [devices, drivers] = await Promise.all([
-      traccarFetchJson(env, request, "/devices"),
-      traccarFetchJson(env, request, "/drivers").catch(() => []),
+      traccarFetchJson(request, "/devices"),
+      traccarFetchJson(request, "/drivers").catch(() => []),
     ]);
     const driverByUniqueId = new Map(drivers.map((d) => [d.uniqueId, d.name]));
-    let lastRouteError = null;
     const positions = isLive
-      ? await traccarFetchJson(env, request, "/positions")
-      : await fetchHistoricalPositions(devices, date, time, async (path) => {
-          try {
-            return await traccarFetchJson(env, request, path);
-          } catch (error) {
-            lastRouteError = error;
-            throw error;
-          }
-        });
-
-    if (!isLive && devices.length > 0 && positions.length === 0 && lastRouteError) {
-      throw new Error(
-        `Aucune position historique récupérée pour les ${devices.length} véhicules (ex: ${lastRouteError.message})`
-      );
-    }
-
+      ? await traccarFetchJson(request, "/positions")
+      : await fetchHistoricalPositions(devices, date, time, (path) => traccarFetchJson(request, path));
     const rows = mapVehicleRows(devices, positions, {
       useDeviceAttributes: isLive,
       driverByUniqueId,
