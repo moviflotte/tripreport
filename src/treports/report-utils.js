@@ -1,6 +1,6 @@
-// Shared vehicle-report logic used by both the browser UI (app.js) and the
-// Excel export function (functions/treports/vehicles-xlsx.js). Keeping this in
-// one place avoids the two surfaces drifting apart and disagreeing on values.
+// Shared vehicle-report logic used by the browser UI (app.js) and the
+// client-side Excel export (xlsx-builder.js). Keeping this in one place
+// avoids the two surfaces drifting apart and disagreeing on values.
 
 export const ROUTE_CONCURRENCY = 6;
 
@@ -10,9 +10,11 @@ export function todayISODate() {
   return new Date(today.getTime() - offsetMs).toISOString().slice(0, 10);
 }
 
+const ROUTE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+
 export function dateRangeParams(date, time = "23:59:59") {
   const to = new Date(`${date}T${time}Z`);
-  const from = new Date(to.getTime() - 24 * 60 * 60 * 1000);
+  const from = new Date(to.getTime() - ROUTE_LOOKBACK_MS);
   return new URLSearchParams({
     from: from.toISOString(),
     to: to.toISOString(),

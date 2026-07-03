@@ -1,16 +1,18 @@
 {
   "name": "trip-report",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "wrangler pages dev public",
-    "deploy": "wrangler pages deploy"
+    "build": "esbuild src/treports/app.js --bundle --minify --format=esm --outfile=public/treports/app.js",
+    "dev": "npm run build && wrangler pages dev public",
+    "deploy": "npm run build && wrangler pages deploy"
   },
   "dependencies": {
     "exceljs": "^4.4.0"
   },
   "devDependencies": {
+    "esbuild": "^0.17.19",
     "wrangler": "^3.0.0"
   }
 }

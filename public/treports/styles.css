@@ -152,6 +152,36 @@ p {
   background: #edf2f4;
 }
 
+.table-header button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.button-link.is-loading {
+  pointer-events: none;
+  opacity: 0.7;
+  position: relative;
+  padding-left: 32px;
+}
+
+.button-link.is-loading::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  width: 14px;
+  height: 14px;
+  border: 2px solid #b9c5cc;
+  border-top-color: #39464e;
+  border-radius: 50%;
+  animation: excel-spin 0.6s linear infinite;
+}
+
+@keyframes excel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .progress-bar {
   height: 3px;
   background: #edf0f2;
