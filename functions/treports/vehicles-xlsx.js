@@ -20,7 +20,8 @@ function formatDateFR(date) {
 // tested path to the upstream server and can't drift out of sync.
 async function traccarFetchJson(request, path) {
   const upstream = new URL(`/api/${path.replace(/^\//, "")}`, request.url);
-  const response = await fetch(new Request(upstream, request));
+  const upstreamRequest = new Request(new Request(upstream, request), { redirect: "follow" });
+  const response = await fetch(upstreamRequest);
 
   if (!response.ok) {
     const body = await response.text();
