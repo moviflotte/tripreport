@@ -10,11 +10,12 @@ export function todayISODate() {
   return new Date(today.getTime() - offsetMs).toISOString().slice(0, 10);
 }
 
-const ROUTE_LOOKBACK_MS = 7 * 24 * 60 * 60 * 1000;
+const ROUTE_LOOKBACK_MS_SHORT = 24 * 60 * 60 * 1000;
+const ROUTE_LOOKBACK_MS_LONG = 30 * 24 * 60 * 60 * 1000;
 
-export function dateRangeParams(date, time = "23:59:59") {
+export function dateRangeParams(date, time = "23:59:59", lookbackMs = ROUTE_LOOKBACK_MS_SHORT) {
   const to = new Date(`${date}T${time}Z`);
-  const from = new Date(to.getTime() - ROUTE_LOOKBACK_MS);
+  const from = new Date(to.getTime() - lookbackMs);
   return new URLSearchParams({
     from: from.toISOString(),
     to: to.toISOString(),
@@ -77,16 +78,15 @@ export function normalizeFuelLevel(value) {
   return Math.max(0, Math.min(100, percent));
 }
 
+export function positionTimestamp(position) {
+  return new Date(position?.fixTime || position?.deviceTime || position?.serverTime || 0).getTime();
+}
+
 export function latestPositionForRoute(route) {
   if (!Array.isArray(route) || route.length === 0) return null;
 
   return [...route]
-    .sort((a, b) => {
-      const aTime = new Date(a.fixTime || a.deviceTime || a.serverTime || 0).getTime();
-      const bTime = new Date(b.fixTime || b.deviceTime || b.serverTime || 0).getTime();
-
-      return aTime - bTime;
-    })
+    .sort((a, b) => positionTimestamp(a) - positionTimestamp(b))
     .at(-1);
 }
 
@@ -130,21 +130,43 @@ export function mapVehicleRows(devices, positions, options = {}) {
 
 // `fetchRouteJson(path)` is supplied by the caller so this stays agnostic of
 // how each environment reaches the Traccar API (browser fetch vs. edge fetch).
-export async function fetchHistoricalPositions(devices, date, time, fetchRouteJson, onProgress) {
-  const range = dateRangeParams(date, time);
+async function fetchLatestPosition(device, date, time, lookbackMs, fetchRouteJson) {
+  const params = dateRangeParams(date, time, lookbackMs);
+  params.set("deviceId", device.id);
+
+  try {
+    return latestPositionForRoute(await fetchRouteJson(`/reports/route?${params}`));
+  } catch (error) {
+    console.warn(`[treports] route fetch failed for device ${device.id} on ${date}`, error);
+    return null;
+  }
+}
+
+export async function fetchHistoricalPositions(
+  devices, date, time, fetchRouteJson, onProgress, livePositionByDeviceId = new Map()
+) {
+  const cutoff = new Date(`${date}T${time}Z`).getTime();
   let done = 0;
   const positions = await mapWithConcurrency(
     devices,
     ROUTE_CONCURRENCY,
     async (device) => {
-      const params = new URLSearchParams(range);
-      params.set("deviceId", device.id);
-
       try {
-        return latestPositionForRoute(await fetchRouteJson(`/reports/route?${params}`));
-      } catch (error) {
-        console.warn(`[treports] no route for device ${device.id} on ${date}`, error);
-        return null;
+        const position = await fetchLatestPosition(
+          device, date, time, ROUTE_LOOKBACK_MS_SHORT, fetchRouteJson
+        );
+
+        if (position) return position;
+
+        // The device's last known position (from the live endpoint) already
+        // predates the selected time, so it's still accurate as-of that
+        // time — no need to burn a wide 1-month route query on it. Checked
+        // even if the short lookup above errored out, so one bad request
+        // doesn't hide a perfectly good live fallback.
+        const livePosition = livePositionByDeviceId.get(device.id);
+        if (livePosition && positionTimestamp(livePosition) <= cutoff) return livePosition;
+
+        return await fetchLatestPosition(device, date, time, ROUTE_LOOKBACK_MS_LONG, fetchRouteJson);
       } finally {
         onProgress?.(++done, devices.length);
       }

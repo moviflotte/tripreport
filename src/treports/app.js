@@ -132,14 +132,18 @@ async function loadReport() {
   setLoadingState(isLive ? "latest" : "historical");
 
   try {
-    const [devices, drivers] = await Promise.all([
+    const [devices, drivers, livePositions] = await Promise.all([
       fetchJson("/devices"),
       fetchJson("/drivers").catch(() => []),
+      fetchJson("/positions"),
     ]);
     const driverByUniqueId = new Map(drivers.map((d) => [d.uniqueId, d.name]));
+    const livePositionByDeviceId = new Map(livePositions.map((p) => [p.deviceId, p]));
     const positions = isLive
-      ? await fetchJson("/positions")
-      : await fetchHistoricalPositions(devices, selectedDate, selectedTime, fetchJson, updateProgress);
+      ? livePositions
+      : await fetchHistoricalPositions(
+          devices, selectedDate, selectedTime, fetchJson, updateProgress, livePositionByDeviceId
+        );
 
     if (loadId !== activeLoadId) return;
     currentRows = mapVehicleRows(devices, positions, { useDeviceAttributes: isLive, driverByUniqueId });
